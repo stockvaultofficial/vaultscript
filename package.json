@@ -1,0 +1,34 @@
+{
+  "name": "@stockvault/vaultscript",
+  "version": "0.2.0",
+  "description": "VaultScript — a lightweight language for describing tokenized real-world assets on StockVault.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "vault": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "examples",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "test": "node dist/index.js check examples/demo.vault"
+  },
+  "keywords": [
+    "stockvault",
+    "vaultscript",
+    "rwa",
+    "tokenization",
+    "blockchain",
+    "dsl"
+  ],
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
