@@ -1,0 +1,6 @@
+*.vault.json
+dist-tests/
+tests/
+node_modules/
+vaultscript-public-test/
+*.tgz
