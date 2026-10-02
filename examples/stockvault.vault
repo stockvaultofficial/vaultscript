@@ -1,0 +1,48 @@
+// VaultScript v0.3 example
+// StockVault tokenized asset infrastructure
+
+asset AAPL {
+    name: "Apple Inc."
+    type: equity
+    ticker: "AAPL"
+    price: 255
+    decimals: 18
+    tokenized: true
+}
+
+asset TSLA {
+    name: "Tesla Inc."
+    type: equity
+    ticker: "TSLA"
+    price: 450
+    decimals: 18
+    tokenized: true
+}
+
+market AAPL/USD {
+    oracle: stockvault
+    currency: USD
+}
+
+market TSLA/USD {
+    oracle: stockvault
+    currency: USD
+}
+
+rule transfer {
+    require verified == true
+    require amount > 0
+    require balance >= amount
+}
+
+rule redeem {
+    require verified == true
+    require amount > 0
+    require balance >= amount
+}
+
+let shares = 10
+
+print AAPL.name
+print AAPL.price
+print shares * AAPL.price
