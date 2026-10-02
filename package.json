@@ -1,27 +1,32 @@
 {
   "name": "@stockvault/vaultscript",
-  "version": "0.2.0",
-  "description": "VaultScript — a lightweight language for describing tokenized real-world assets on StockVault.",
+  "version": "0.4.0",
+  "description": "VaultScript — the language for defining, validating and compiling tokenized real-world assets on StockVault.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "vault": "./dist/index.js"
+    "vault": "dist/index.js"
   },
   "files": [
     "dist",
     "examples",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true});require('fs').rmSync('dist-tests',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "build:test": "tsc -p tsconfig.test.json",
+    "test": "npm run build && npm run build:test && node dist-tests/tests/vaultscript.test.js",
     "dev": "tsx src/index.ts",
-    "test": "node dist/index.js check examples/demo.vault"
+    "prepublishOnly": "npm test"
   },
   "keywords": [
     "stockvault",
     "vaultscript",
     "rwa",
+    "real-world-assets",
     "tokenization",
     "blockchain",
     "dsl"

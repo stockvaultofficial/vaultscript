@@ -1,32 +1,66 @@
-# VaultScript
+﻿# VaultScript
 
-> **The language for StockVault. Define, validate and compile tokenized real-world assets with `.vault` files.**
+> **The language for StockVault. Define, validate, evaluate and compile tokenized real-world assets with `.vault` files.**
 
 VaultScript is an experimental domain-specific language (DSL) being developed for the **StockVault ecosystem**.
 
-It provides a human-readable way to describe tokenized assets, markets, validation rules and runtime instructions, then compile those definitions into structured StockVault manifests.
+It provides a human-readable way to describe tokenized assets, markets, policy rules and runtime instructions, then validate, execute, evaluate and compile those definitions for StockVault infrastructure.
 
 ```text
 .vault source
-      ↓
+      |
+      v
     Lexer
-      ↓
+      |
+      v
     Tokens
-      ↓
+      |
+      v
     Parser
-      ↓
+      |
+      v
      AST
-    ↙   ↘
-Runtime  Compiler
-           ↓
-   StockVault Manifest
+   /  |  \
+  v   v   v
+Runtime   Rule Engine   Compiler
+            |             |
+            v             v
+       ALLOW / DENY   StockVault Manifest
 ```
 
-**Current version: `0.3.0`**
+**Current version: `0.4.0`**
 
 ---
 
-## Example
+## Installation
+
+Install VaultScript from npm:
+
+```bash
+npm install @stockvault/vaultscript
+```
+
+Or install it globally:
+
+```bash
+npm install -g @stockvault/vaultscript
+```
+
+Check the installed version:
+
+```bash
+vault --version
+```
+
+```text
+VaultScript 0.4.0
+```
+
+---
+
+# Quick Start
+
+Create a file named `stockvault.vault`:
 
 ```vault
 asset AAPL {
@@ -56,42 +90,68 @@ print AAPL.price
 print shares * AAPL.price
 ```
 
+Validate it:
+
+```bash
+vault check stockvault.vault
+```
+
 Run it:
 
 ```bash
-vault run example.vault
+vault run stockvault.vault
 ```
 
-Output:
+Compile it:
 
-```text
-VaultScript
-────────────────────────────
-✓ Asset loaded: AAPL
+```bash
+vault compile stockvault.vault
+```
 
-Apple Inc.
-255
-2550
+Evaluate a policy rule:
 
-✓ Executed example.vault
-  1 asset
-  1 market
-  1 rule
+```bash
+vault evaluate transfer stockvault.vault --context transfer-context.json
 ```
 
 ---
 
 # CLI
 
-VaultScript currently provides three core commands.
+VaultScript v0.4.0 provides four core commands:
+
+```text
+vault run
+vault check
+vault compile
+vault evaluate
+```
 
 ## Run
 
-Execute a `.vault` program:
+Execute runtime instructions inside a `.vault` program:
 
 ```bash
 vault run examples/stockvault.vault
 ```
+
+Example output:
+
+```text
+VaultScript
+----------------------------
+
+[Asset loaded: AAPL]
+[Asset loaded: TSLA]
+
+Apple Inc.
+255
+2550
+
+Executed stockvault.vault
+```
+
+The exact CLI formatting may vary between releases.
 
 ---
 
@@ -103,15 +163,7 @@ Validate VaultScript syntax:
 vault check examples/stockvault.vault
 ```
 
-Example:
-
-```text
-✓ stockvault.vault is valid VaultScript
-  2 assets
-  2 markets
-  2 rules
-  1 variable
-```
+A valid program reports its parsed declarations, including assets, markets, rules and variables.
 
 ---
 
@@ -129,15 +181,155 @@ This generates:
 stockvault.vault.json
 ```
 
-Example:
+The generated manifest contains structured representations of:
+
+- Assets
+- Markets
+- Rules
+- Rule expressions
+- VaultScript version
+- Generation timestamp
+
+Generated `.vault.json` files are ignored by the repository by default.
+
+---
+
+## Evaluate
+
+VaultScript v0.4.0 introduces executable policy evaluation.
+
+A rule can be defined inside a `.vault` file:
+
+```vault
+rule transfer {
+    require verified == true
+    require amount > 0
+    require balance >= amount
+}
+```
+
+Create a JSON context:
+
+```json
+{
+  "verified": true,
+  "amount": 10,
+  "balance": 50
+}
+```
+
+Then evaluate the rule:
+
+```bash
+vault evaluate transfer examples/stockvault.vault --context examples/transfer-context.json
+```
+
+Example result:
 
 ```text
-✓ Compiled stockvault.vault
-→ stockvault.vault.json
-→ 2 assets
-→ 2 markets
-→ 2 rules
+VaultScript Rule Evaluation
+----------------------------
+
+Rule: transfer
+
+PASS verified == true
+PASS amount > 0
+PASS balance >= amount
+
+transfer allowed
 ```
+
+If the context contains:
+
+```json
+{
+  "verified": true,
+  "amount": 100,
+  "balance": 50
+}
+```
+
+the balance requirement fails:
+
+```text
+Rule: transfer
+
+PASS verified == true
+PASS amount > 0
+FAIL balance >= amount
+
+transfer denied
+```
+
+This allows StockVault policy decisions to be expressed in VaultScript while transaction-specific data is supplied separately at evaluation time.
+
+---
+
+# Rule Engine
+
+The v0.4 rule engine evaluates VaultScript rules against JSON runtime context.
+
+```text
+Transaction / Action
+        |
+        v
+ JSON Rule Context
+        |
+        v
+ VaultScript Rule
+        |
+        v
+   Rule Engine
+      /    \
+     v      v
+  ALLOW    DENY
+```
+
+For example:
+
+```vault
+rule transfer {
+    require verified == true
+    require amount > 0
+    require balance >= amount
+}
+```
+
+can be evaluated using:
+
+```json
+{
+  "verified": true,
+  "amount": 25,
+  "balance": 100
+}
+```
+
+Every `require` expression is evaluated independently.
+
+The overall rule is allowed only when **all requirements pass**.
+
+Conceptually:
+
+```text
+requirement 1 = true
+requirement 2 = true
+requirement 3 = true
+--------------------
+rule = ALLOW
+```
+
+If any requirement evaluates to `false`:
+
+```text
+requirement 1 = true
+requirement 2 = true
+requirement 3 = false
+--------------------
+rule = DENY
+```
+
+The rule engine also rejects missing context values and unknown rules.
 
 ---
 
@@ -158,7 +350,16 @@ asset AAPL {
 }
 ```
 
-Asset properties support strings, numbers, booleans and symbolic identifiers.
+Asset properties currently support:
+
+```text
+strings
+numbers
+booleans
+symbolic identifiers
+```
+
+Examples:
 
 ```vault
 type: equity
@@ -179,13 +380,13 @@ market AAPL/USD {
 }
 ```
 
-The compiler represents this as structured data containing the pair, base asset, quote asset and configured properties.
+The compiler converts market declarations into structured manifest data containing the pair, base asset, quote asset and configured properties.
 
 ---
 
 ## Rules
 
-Rules describe requirements that can later be consumed by StockVault infrastructure.
+Rules describe conditions that must pass before an action is allowed.
 
 ```vault
 rule transfer {
@@ -195,7 +396,7 @@ rule transfer {
 }
 ```
 
-Rules are compiled into structured expression trees rather than being stored as raw text.
+Rules are represented internally as Abstract Syntax Tree expressions.
 
 For example:
 
@@ -207,22 +408,37 @@ is represented conceptually as:
 
 ```text
 BinaryExpression
-├── left: balance
-├── operator: >=
-└── right: amount
+|
++-- left: balance
++-- operator: >=
++-- right: amount
 ```
 
-This allows future StockVault systems to inspect, validate and execute rule definitions programmatically.
+In v0.4.0 these expressions can be both:
+
+```text
+compiled into manifests
+and
+evaluated by the VaultScript rule engine
+```
 
 ---
 
 ## Variables
 
+Variables are declared with `let`:
+
 ```vault
 let shares = 10
 ```
 
-Variables can be referenced by runtime expressions:
+They can be referenced by runtime expressions:
+
+```vault
+print shares
+```
+
+or combined with asset properties:
 
 ```vault
 print shares * AAPL.price
@@ -260,6 +476,14 @@ let shares = 10
 print shares * AAPL.price
 ```
 
+Arithmetic expressions can also be used by the rule engine:
+
+```vault
+rule transfer {
+    require amount * price <= balance
+}
+```
+
 ---
 
 ## Comparisons
@@ -289,23 +513,25 @@ rule redeem {
 
 ## Unary Expressions
 
-VaultScript supports unary negation and boolean inversion.
+VaultScript supports numeric negation:
 
 ```vault
 print -100
 ```
 
-Rules and future runtime contexts can also use:
+and boolean inversion:
 
 ```vault
-!verified
+rule transfer {
+    require !frozen
+}
 ```
 
 ---
 
 ## Grouping
 
-Expressions can be grouped with parentheses:
+Expressions can be grouped using parentheses:
 
 ```vault
 print (10 + 5) * 2
@@ -315,7 +541,7 @@ print (10 + 5) * 2
 
 ## Comments
 
-Single-line comments use:
+Single-line comments use `//`:
 
 ```vault
 // VaultScript comment
@@ -323,7 +549,50 @@ Single-line comments use:
 
 ---
 
-# File Extension
+# Rule Context
+
+Rule context is supplied as JSON.
+
+Example:
+
+```json
+{
+  "verified": true,
+  "amount": 10,
+  "balance": 50
+}
+```
+
+Context values currently support:
+
+```text
+string
+number
+boolean
+```
+
+Arrays, objects and null values are not currently accepted as rule-context values.
+
+If a rule references a value that is not present in the context, evaluation fails rather than silently assuming a value.
+
+For example:
+
+```vault
+require balance >= amount
+```
+
+requires both:
+
+```text
+balance
+amount
+```
+
+to exist in the supplied context.
+
+---
+
+# File Extensions
 
 VaultScript source files use:
 
@@ -352,39 +621,41 @@ Example:
 stockvault.vault.json
 ```
 
-Generated `.vault.json` files are ignored by the repository by default.
-
 ---
 
-# Compiler
+# Compiler Architecture
 
-VaultScript `0.3.0` uses a lexer, parser and Abstract Syntax Tree instead of directly interpreting source text.
-
-The pipeline is:
+VaultScript v0.4.0 uses a lexer, parser and Abstract Syntax Tree rather than directly interpreting raw source text.
 
 ```text
 Source
-  │
-  ▼
+  |
+  v
 Lexer
-  │
-  ▼
+  |
+  v
 Tokens
-  │
-  ▼
+  |
+  v
 Parser
-  │
-  ▼
+  |
+  v
 AST
-  ├─────────────┐
-  ▼             ▼
-Runtime      Compiler
-                │
-                ▼
-        StockVault Manifest
+  |
+  +----------------+
+  |                |
+  v                v
+Runtime         Compiler
+  |
+  +------+
+         |
+         v
+    Rule Engine
 ```
 
-This architecture is designed to make VaultScript extensible as the StockVault protocol evolves.
+The AST provides a common representation that can be consumed by different VaultScript components.
+
+This architecture is intended to allow the language to evolve without requiring separate parsing logic for the runtime, compiler and policy engine.
 
 ---
 
@@ -409,52 +680,39 @@ rule transfer {
 }
 ```
 
-VaultScript produces a manifest similar to:
+VaultScript produces a manifest containing data similar to:
 
 ```json
 {
-  "vaultscript": "0.3.0",
+  "vaultscript": "0.4.0",
+  "generatedAt": "2026-10-02T00:00:00.000Z",
   "assets": [
     {
       "symbol": "AAPL",
-      "name": "Apple Inc.",
-      "type": "equity",
-      "ticker": "AAPL"
+      "properties": {
+        "name": "Apple Inc.",
+        "type": "equity",
+        "ticker": "AAPL"
+      }
     }
   ],
   "markets": [
     {
       "pair": "AAPL/USD",
       "base": "AAPL",
-      "quote": "USD",
-      "oracle": "stockvault"
+      "quote": "USD"
     }
   ],
   "rules": [
     {
       "name": "transfer",
-      "requirements": [
-        {
-          "expression": {
-            "type": "binary",
-            "operator": "==",
-            "left": {
-              "type": "identifier",
-              "name": "verified"
-            },
-            "right": {
-              "type": "literal",
-              "value": true
-            }
-          }
-        }
-      ]
+      "requirements": []
     }
   ]
 }
 ```
 
-The actual generated manifest also contains a `generatedAt` timestamp.
+The exact manifest representation is defined by the current compiler implementation and may evolve while VaultScript remains experimental.
 
 ---
 
@@ -466,10 +724,23 @@ Install dependencies:
 npm install
 ```
 
-Build:
+Build the production CLI:
 
 ```bash
 npm run build
+```
+
+Run the complete automated test suite:
+
+```bash
+npm test
+```
+
+Current v0.4.0 test suite:
+
+```text
+19 passed
+0 failed
 ```
 
 Link the CLI locally:
@@ -478,14 +749,14 @@ Link the CLI locally:
 npm link
 ```
 
-Then:
+Check the version:
 
 ```bash
 vault --version
 ```
 
 ```text
-VaultScript 0.3.0
+VaultScript 0.4.0
 ```
 
 View CLI help:
@@ -500,96 +771,191 @@ vault --help
 
 ```text
 vaultscript/
-├── examples/
-│   ├── demo.vault
-│   └── stockvault.vault
-│
-├── src/
-│   ├── commands/
-│   │   ├── check.ts
-│   │   ├── compile.ts
-│   │   └── run.ts
-│   │
-│   ├── compiler/
-│   │   └── manifest.ts
-│   │
-│   ├── lexer/
-│   │   ├── lexer.ts
-│   │   └── token.ts
-│   │
-│   ├── parser/
-│   │   ├── ast.ts
-│   │   └── parser.ts
-│   │
-│   ├── runtime/
-│   │   └── interpreter.ts
-│   │
-│   └── index.ts
-│
-├── .gitignore
-├── LICENSE
-├── package.json
-├── package-lock.json
-├── README.md
-└── tsconfig.json
+|
++-- examples/
+|   +-- demo.vault
+|   +-- stockvault.vault
+|   +-- transfer-context.json
+|
++-- src/
+|   +-- commands/
+|   |   +-- check.ts
+|   |   +-- compile.ts
+|   |   +-- evaluate.ts
+|   |   +-- run.ts
+|   |
+|   +-- compiler/
+|   |   +-- manifest.ts
+|   |
+|   +-- lexer/
+|   |   +-- lexer.ts
+|   |   +-- token.ts
+|   |
+|   +-- parser/
+|   |   +-- ast.ts
+|   |   +-- parser.ts
+|   |
+|   +-- runtime/
+|   |   +-- interpreter.ts
+|   |   +-- rule-engine.ts
+|   |
+|   +-- index.ts
+|
++-- tests/
+|   +-- vaultscript.test.ts
+|
++-- .gitignore
++-- LICENSE
++-- package.json
++-- package-lock.json
++-- README.md
++-- tsconfig.json
++-- tsconfig.build.json
++-- tsconfig.test.json
 ```
+
+---
+
+# Automated Tests
+
+VaultScript v0.4.0 currently tests:
+
+```text
+Lexer tokenization
+Asset parsing
+Market parsing
+Rule parsing
+Runtime variables
+Asset property access
+Arithmetic
+Arithmetic precedence
+Manifest compilation
+Valid rule evaluation
+Insufficient-balance rejection
+Unverified-context rejection
+Missing-context rejection
+Unknown-rule rejection
+Rule arithmetic
+Invalid syntax
+Unknown assets
+Missing asset properties
+Division by zero
+```
+
+Current result:
+
+```text
+19 passed
+0 failed
+```
+
+---
+
+# What's New in v0.4.0
+
+VaultScript v0.4.0 introduces executable policy rules.
+
+Major additions:
+
+- Rule evaluation engine
+- `vault evaluate` CLI command
+- JSON runtime contexts
+- Per-requirement PASS / FAIL evaluation
+- ALLOW / DENY rule decisions
+- Missing-context validation
+- Unknown-rule validation
+- Arithmetic inside rule expressions
+- Expanded automated test suite
+- Separate production and test TypeScript builds
+
+Example:
+
+```bash
+vault evaluate transfer examples/stockvault.vault --context examples/transfer-context.json
+```
+
+This moves VaultScript beyond defining policy into evaluating policy against supplied runtime data.
+
+---
+
+# Current Limitations
+
+VaultScript is still experimental.
+
+The v0.4 rule engine intentionally supports a limited context model.
+
+Current limitations include:
+
+- Rule context values are limited to strings, numbers and booleans
+- Nested context objects are not supported
+- Member expressions are not yet supported inside rule contexts
+- Rules do not directly execute blockchain transactions
+- Rules do not currently call external oracles
+- No smart-contract bindings are included yet
+- No static type system yet
+- No package/module system yet
+
+These limitations keep the v0.4 execution model small and deterministic while the language architecture develops.
 
 ---
 
 # Roadmap
 
-VaultScript is being developed toward richer StockVault-native primitives.
-
-Potential future syntax includes:
-
-```vault
-asset AAPL {
-    type: equity
-    ticker: "AAPL"
-}
-
-market AAPL/USD {
-    oracle: stockvault
-}
-
-rule transfer {
-    require verified == true
-    require amount > 0
-    require balance >= amount
-}
-```
-
 Future development areas include:
 
 - Typed asset schemas
-- Market definitions
-- Oracle configuration
-- Rule evaluation
-- Runtime contexts
+- Typed rule contexts
+- Nested context data
 - Addresses
-- Tokenization instructions
-- Mint instructions
-- Redemption instructions
+- Oracle integrations
+- Mint policies
+- Redemption policies
 - Transfer policies
+- Asset-level policy binding
 - Contract bindings
 - StockVault SDK integration
-- Smart contract tooling
-- Improved diagnostics
-- Automated language tests
+- Smart-contract tooling
+- Improved compiler diagnostics
+- Source locations in diagnostics
 - Developer tooling
 - Syntax highlighting
+- Language Server Protocol support
+- Additional automated tests
+
+A future policy flow could look like:
+
+```text
+StockVault Transaction
+        |
+        v
+Transaction Context
+        |
+        v
+VaultScript Policy
+        |
+        v
+Rule Evaluation
+        |
+    +---+---+
+    |       |
+    v       v
+ ALLOW    DENY
+    |
+    v
+StockVault Execution Layer
+```
 
 ---
 
 # Status
 
-**VaultScript v0.3.0**
+**VaultScript v0.4.0**
 
 VaultScript is experimental software under active development.
 
-Its syntax, compiler output and runtime behavior may change before a stable release.
+Its syntax, compiler output, rule semantics and runtime behavior may change before a stable release.
 
-VaultScript should not currently be used to represent legally binding ownership, execute financial transactions, or deploy production financial contracts.
+VaultScript should not currently be used by itself to represent legally binding ownership, execute financial transactions or deploy production financial contracts.
 
 ---
 
